@@ -1,0 +1,128 @@
+#!/bin/bash
+
+purl::usage()
+{
+  if [ $1 -eq 0 ]; then
+    cat << USAGE
+  usage:
+        $ cd ~/Downloads
+        $ purl <url> <file>
+USAGE
+    purl::exit 'wrongargs'
+  fi
+}
+
+length=
+purl::length()
+{
+  local IFS accept_ranges content_length capture resp
+  resp=$(curl -IL $1 | grep 'Accept-Ranges:\|Content-Length:')
+  IFS=$' \n\r'
+
+  for i in $resp; do
+    case $i in
+      Content-Length:)
+        capture='content_length'
+        ;;
+      Accept-Ranges:)
+        capture='accept_ranges'
+        ;;
+      *)
+        printf -v "${capture}" '%b' "${i}"
+        ;;
+    esac
+  done
+
+  if [ "$accept_ranges" == "bytes" ]; then
+    length=$content_length
+  else
+    purl::exit 'fail'
+  fi
+}
+
+parts=
+purl::parts()
+{
+  local count file i step lower upper _10Mb _1Gb _10Gb
+  _10Mb=10485760
+  _1Gb=1073741824
+  _10Gb=10737418240
+
+  if [ "$2" -lt $_10Mb ]; then
+    count=1
+  elif [ "$2" -lt $_1Gb ]; then
+    count=10
+  elif [ "$2" -lt $_10Gb ]; then
+    count=20
+  else
+    count=30
+  fi
+
+  step=$(( $2 / $count + 1 ))
+
+  i=0
+  for (( lower=0; lower < $2; lower += $step )); do
+    printf -v file ".%s.%02d" "$1" "$i"
+
+    upper=$(( lower + $step - 1 ))
+
+    if [ $upper -gt $2 ]; then
+      upper=
+    fi
+
+    parts="$parts $file $lower-$upper"
+
+    (( i++ ))
+  done
+}
+
+purl::download()
+{
+  local IFS file range rest offset
+  IFS=$' '
+  rest=$2
+
+  while [ -n "$rest" ]; do
+    read file range rest <<< "$rest"
+
+    # TODO support resume download
+    #curl -sL -r "$range" -o "$file" -C - $1 &
+
+    curl -sL -r "$range" -o "$file" $1 &
+  done
+
+  wait
+}
+
+purl::assemble()
+{
+  local IFS file range rest parts
+  IFS=$' '
+  rest=$2
+
+  while [ -n "$rest" ]; do
+    read file range rest <<< "$rest"
+    parts="$parts $file"
+  done
+
+  cat $parts > $1
+}
+
+purl::exit()
+{
+  case $1 in
+    fail) exit 1 ;;
+    success) exit 0 ;;
+    wrongargs) exit 85 ;;
+  esac
+}
+
+purl::usage $#
+
+URL=$1
+FILE=$2
+
+purl::length $URL
+purl::parts $FILE $length
+purl::download $URL "$parts"
+purl::assemble $FILE "$parts"
