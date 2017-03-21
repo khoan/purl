@@ -8,7 +8,7 @@ purl::usage()
         $ cd ~/Downloads
         $ purl <url> <file>
 USAGE
-    purl::exit 'wrongargs'
+    purl::exit wrongargs
   fi
 }
 
@@ -36,7 +36,7 @@ purl::length()
   if [ "$accept_ranges" == "bytes" ]; then
     length=$content_length
   else
-    purl::exit 'fail'
+    purl::exit fail
   fi
 }
 
@@ -106,6 +106,7 @@ purl::assemble()
   done
 
   cat $parts > $1
+  rm $parts
 }
 
 purl::exit()
@@ -126,3 +127,4 @@ purl::length $URL
 purl::parts $FILE $length
 purl::download $URL "$parts"
 purl::assemble $FILE "$parts"
+purl::exit success
