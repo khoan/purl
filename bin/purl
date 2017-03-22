@@ -117,12 +117,12 @@ purl::progress()
 
 purl::assemble()
 {
-  local IFS file range rest parts
+  local IFS file range size rest parts
   IFS=$' '
   rest=$2
 
   while [ -n "$rest" ]; do
-    read file range rest <<< "$rest"
+    read file range size rest <<< "$rest"
     parts="$parts $file"
   done
 
