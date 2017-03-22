@@ -2,13 +2,12 @@
 
 purl::usage()
 {
-  if [ $1 -eq 0 ]; then
-    cat << USAGE
+  if [ $1 -ne 2 ]; then
+    purl::exit wrongargs <<MSG
   usage:
-        $ cd ~/Downloads
-        $ purl <url> <file>
-USAGE
-    purl::exit wrongargs
+      $ cd ~/Downloads
+      $ purl <url> <file>
+MSG
   fi
 }
 
@@ -36,14 +35,17 @@ purl::length()
   if [ "$accept_ranges" == "bytes" ]; then
     length=$content_length
   else
-    purl::exit fail
+    # TODO should we just download?
+    purl::exit lose <<MSG
+  Lack of love from server
+MSG
   fi
 }
 
 parts=
 purl::parts()
 {
-  local count file i step lower upper _10Mb _1Gb _10Gb
+  local count file i step lower upper size _10Mb _1Gb _10Gb
   _10Mb=10485760
   _1Gb=1073741824
   _10Gb=10737418240
@@ -59,6 +61,7 @@ purl::parts()
   fi
 
   step=$(( $2 / $count + 1 ))
+  size=$step
 
   i=0
   for (( lower=0; lower < $2; lower += $step )); do
@@ -68,9 +71,10 @@ purl::parts()
 
     if [ $upper -gt $2 ]; then
       upper=
+      size=$(( $2 - $lower ))
     fi
 
-    parts="$parts $file $lower-$upper"
+    parts="$parts $file $lower-$upper $size"
 
     (( i++ ))
   done
@@ -78,19 +82,36 @@ purl::parts()
 
 purl::download()
 {
-  local IFS file range rest offset
+  local IFS file range size rest lower upper file_size
   IFS=$' '
   rest=$2
 
   while [ -n "$rest" ]; do
-    read file range rest <<< "$rest"
+    read file range size rest <<< "$rest"
 
-    # TODO support resume download
-    #curl -sL -r "$range" -o "$file" -C - $1 &
+    if [ -f "$file" ]; then
+      file_size=$(stat -f%z "$file")
 
-    curl -sL -r "$range" -o "$file" $1 &
+      if [ "$file_size" -lt "$size" ]; then
+        IFS=- read lower upper <<< "$range"
+        lower=$(( $lower + $file_size + 1 ))
+        range="$lower-$upper"
+      else
+        range=
+      fi 
+    fi
+
+    if [ -n "$range" ]; then
+      curl -sL -r "$range" $1 >> "$file" &
+    fi
   done
 
+  #purl::progress "$2" "$pids"
+  purl::progress "$2"
+}
+
+purl::progress()
+{
   wait
 }
 
@@ -111,9 +132,11 @@ purl::assemble()
 
 purl::exit()
 {
+  cat
+
   case $1 in
-    fail) exit 1 ;;
-    success) exit 0 ;;
+    win)       exit 0  ;;
+    lose|*)      exit 1  ;;
     wrongargs) exit 85 ;;
   esac
 }
@@ -127,4 +150,7 @@ purl::length $URL
 purl::parts $FILE $length
 purl::download $URL "$parts"
 purl::assemble $FILE "$parts"
-purl::exit success
+
+purl::exit win <<MSG
+done
+MSG
